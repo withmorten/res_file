@@ -793,8 +793,6 @@ void RESFILE_dump_all(char *res_file, char *target_path)
 
 				snprintf(filename, sizeof(filename), "%s%05d.%s", target_path, id_node->id, RESFILE_get_extension(type_node->type));
 
-				// puts(filename);
-
 				RESFILE_Make_File(type_node->type, id_node->id, filename);
 			}
 		}
