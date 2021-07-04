@@ -31,7 +31,7 @@ void RESFILE_Set_Missing_Flag(bool32 FlagVal);
 uint32 BUILDRES_get_files_resource_type(char *filename);
 bool32 RESFILE_build_res_file(char *build_list_file, char *source_path, char *target_path);
 
-void RESFILE_open_new_resource_file(char *resFileName, char *password, char *path, int32 open_mode = RESOURCE_MEMORY_MAPPED);
+void RESFILE_open_new_resource_file(char *resFileName, char *password, char *path = "", int32 open_mode = RESOURCE_MEMORY_MAPPED);
 void RESFILE_close_new_resource_file(char *res_file);
 
 byte *RESFILE_load(uint32 rType, uint32 rId, int32 &rLoadType, int32 &rDataSize);

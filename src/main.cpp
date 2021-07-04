@@ -1,15 +1,18 @@
+#ifdef _WIN32
 #include <Windows.h>
+#include <direct.h>
+#endif
 
 #include "main.h"
 
 #include "res_file.h"
 
 #define USAGE \
-"res_file <e/x>/<b/m> <rm/drs> [source path] [target path]\n" \
+"res_file <e/x> <drs> [target path]\n" \
+"res_file <e/x> <rm> [target path] [source path]\n" \
+"res_file <b/m> <rm> [source path] [target path] \n" \
 "e/x extract, b/m build\n" \
-"extracting can use rm or drs (if no rm present), building works with rm only\n" \
-"source and target path must exist (if given, default is current directory)\n" \
-"only target path must be given when extracting a drs without rm file\n"
+"extracting can use rm or drs (if no rm present), building works with rm only\n"
 
 int32 main(int32 argc, char **argv)
 {
@@ -27,161 +30,187 @@ int32 main(int32 argc, char **argv)
 	case 'e':
 	case 'x':
 	{
-		char *build_list_file = argv[2];
+		unixify_path(argv[2]);
 
-		bool32 drs_mode = FALSE;
+		char *p = strrchr(argv[2], '.');
 
-		char *p = strrchr(build_list_file, '.');
-
-		if (p)
+		if (!p)
 		{
-			if (!stricmp(p, ".drs"))
-			{
-				drs_mode = TRUE;
-			}
+			printf("error: wrong extension for infile, must be .rm or .drs (or any extension)\n");
+
+			return 1;
 		}
 
-		char *source_path = EMPTYSTR;
-		char *target_path = EMPTYSTR;
+		bool32 manifest = strequal(p, ".rm");
 
-		if (!drs_mode)
+		if (!manifest)
 		{
-			if (argc > 3)
+			char *drs_name = argv[2];
+			char *target_path;
+
+			if (!argv[3])
 			{
-				source_path = (char *)rge_calloc(strlen(argv[3]) + 1 + 1, 1);
-				strcpy(source_path, argv[3]);
+				target_path = rge_calloc<char>(strlen(drs_name) + 1 + 1);
+				strcpy(target_path, drs_name);
 
-				if (*source_path != '.' || (*source_path == '.' && source_path[1] == '..'))
-				{
-					size_t len = strlen(source_path);
+				p = strrchr(target_path, '.');
+				*p++ = '/';
+				*p = '\0';
+			}
+			else
+			{
+				unixify_path(argv[3]);
+				size_t target_path_len = strlen(argv[3]);
+				target_path = rge_calloc<char>(target_path_len + 1 + 1);
+				strcpy(target_path, argv[3]);
 
-					if (source_path[len - 1] != '/' && source_path[len - 1] != '\\')
-					{
-						source_path[len] = '/';
-					}
-				}
-				else
-				{
-					*source_path = '\0';
-				}
+				if (target_path[target_path_len - 1] != '/') target_path[target_path_len] = '/';
 			}
 
-			if (argc > 4)
+			FILE *f = rge_fopen(drs_name, "rb");
+
+			if (!f)
 			{
-				target_path = (char *)rge_calloc(strlen(argv[4]) + 1 + 1, 1);
-				strcpy(target_path, argv[4]);
+				printf("error: couldn't open drs file: %s\n", drs_name);
 
-				if (*target_path != '.' || (*target_path == '.' && target_path[1] == '..'))
-				{
-					size_t len = strlen(target_path);
-
-					if (target_path[len - 1] != '/' && target_path[len - 1] != '\\')
-					{
-						target_path[len] = '/';
-					}
-				}
-				else
-				{
-					*target_path = '\0';
-				}
+				return 1;
 			}
+
+			rge_fclose(f);
+
+			if (mkdir_p(target_path) == -1)
+			{
+				printf("error: couldn't create target path: %s\n", target_path);
+
+				return 1;
+			}
+
+			RESFILE_open_new_resource_file(drs_name, RESFILE_PASSWORD);
+
+			RESFILE_dump_all(drs_name, target_path);
+
+			RESFILE_close_new_resource_file(drs_name);
+
+			printf("RESFILE_dump_all done\n");
+
+			rge_free(target_path);
 		}
 		else
 		{
-			if (argc > 3)
-			{
-				target_path = (char *)rge_calloc(strlen(argv[3]) + 1 + 1, 1);
-				strcpy(target_path, argv[3]);
+			char *build_list_file = argv[2];
+			char *target_path;
+			char *source_path;
 
-				if (*target_path != '.' || (*target_path == '.' && target_path[1] == '..'))
-				{
-					CreateDirectory(target_path, NULL);
-
-					size_t len = strlen(target_path);
-
-					if (target_path[len - 1] != '/' && target_path[len - 1] != '\\')
-					{
-						target_path[len] = '/';
-					}
-				}
-				else
-				{
-					*target_path = '\0';
-				}
-			}
-		}
-
-		if (!drs_mode)
-		{
 			char drs_name[MAX_PATH];
+			char res_name[MAX_PATH];
 			char password[40];
-			char temp_filename[MAX_PATH];
-			char temp_path[MAX_PATH];
-			uint32 rId;
 
 			FILE *buildFile = rge_fopen(build_list_file, "r");
 
 			if (!buildFile)
 			{
-				printf("error: couldn't open build list file %s\n", build_list_file);
+				printf("error: couldn't open build list file: %s\n", build_list_file);
 
 				return 1;
 			}
 
-			fscanf(buildFile, "%s %s", drs_name, password);
+			if (fscanf(buildFile, "%s %s", res_name, password) != 2)
+			{
+				printf("error: couldn't read from build list file: %s\n", build_list_file);
 
-			snprintf(temp_path, sizeof(temp_path), "%s/%s", drs_name, target_path);
-			CreateDirectory(temp_path, NULL);
+				return 1;
+			}
 
-			char *drs_file = (char *)rge_calloc(strlen(drs_name) + 4 + 1, 1);
-			sprintf(drs_file, "%s%s", drs_name, ".drs");
+#ifdef DRS_NAME_FROM_RM
+			saprintf(drs_name, "%s.drs", res_name);
+#else
+			p = strchr(build_list_file, '/');
 
-			RESFILE_open_new_resource_file(drs_file, RESFILE_PASSWORD, source_path);
+			if (p) p++;
+			else p = build_list_file;
 
-			while (fscanf(buildFile, "%s", temp_filename) != EOF && fscanf(buildFile, "%d", &rId) != EOF)
+			stracpychr(drs_name, p, '.');
+			stracat(drs_name, ".drs");
+
+			stracpychr(res_name, p, '.');
+#endif
+
+			if (!argv[3])
+			{
+				size_t target_path_len = strlen(res_name);
+				target_path = rge_calloc<char>(target_path_len + 1 + 1);
+				strcpy(target_path, res_name);
+
+				target_path[target_path_len] = '/';
+
+				source_path = strdup("");
+			}
+			else
+			{
+				unixify_path(argv[3]);
+				size_t target_path_len = strlen(argv[3]);
+				target_path = rge_calloc<char>(target_path_len + 1 + 1);
+				strcpy(target_path, argv[3]);
+
+				if (target_path[target_path_len - 1] != '/') target_path[target_path_len] = '/';
+
+				if (!argv[4])
+				{
+					source_path = strdup("");
+				}
+				else
+				{
+					unixify_path(argv[4]);
+					size_t source_path_len = strlen(argv[4]);
+					source_path = rge_calloc<char>(source_path_len + 1 + 1);
+					strcpy(source_path, argv[4]);
+
+					if (source_path[source_path_len - 1] != '/') source_path[source_path_len] = '/';
+				}
+			}
+
+			char drs_path[MAX_PATH];
+			saprintf(drs_path, "%s%s", source_path, drs_name);
+
+			FILE *f = rge_fopen(drs_path, "rb");
+
+			if (!f)
+			{
+				printf("error: couldn't open drs file: %s\n", drs_path);
+
+				return 1;
+			}
+
+			rge_fclose(f);
+
+			if (mkdir_p(target_path) == -1)
+			{
+				printf("error: couldn't create target path: %s\n", target_path);
+
+				return 1;
+			}
+
+			char temp_filename[MAX_PATH];
+			uint32 rId;
+
+			RESFILE_open_new_resource_file(drs_name, RESFILE_PASSWORD, source_path, RESOURCE_MEMORY_ALLOCATED);
+
+			while (fscanf(buildFile, "%s", temp_filename) == 1 && fscanf(buildFile, "%d", &rId) == 1)
 			{
 				char temp_filepath[MAX_PATH];
-				snprintf(temp_filepath, sizeof(temp_filepath), "%s/%s", temp_path, temp_filename);
+				saprintf(temp_filepath, "%s%s", target_path, temp_filename);
 
 				RESFILE_Make_File(BUILDRES_get_files_resource_type(temp_filename), rId, temp_filepath);
 			}
 
-			RESFILE_close_new_resource_file(drs_file);
+			RESFILE_close_new_resource_file(drs_name);
 
-			rge_free(drs_file);
+			printf("RESFILE_Make_File done\n");
 
 			rge_fclose(buildFile);
-		}
-		else
-		{
-			char temp_path[MAX_PATH];
-			char *temp = strdup(build_list_file);
 
-			char *p = strrchr(temp, '.');
-
-			if (!p)
-			{
-				printf("error: wrong extension for infile, must be .rm or .drs\n");
-
-				return 1;
-			}
-
-			*p = '\0';
-			snprintf(temp_path, sizeof(temp_path), "%s%s", target_path, temp);
-
-			CreateDirectory(temp_path, NULL);
-
-			*p++ = '/';
-			*p = '\0';
-			snprintf(temp_path, sizeof(temp_path), "%s%s", target_path, temp);
-
-			RESFILE_open_new_resource_file(build_list_file, RESFILE_PASSWORD, EMPTYSTR);
-
-			RESFILE_dump_all(build_list_file, temp_path);
-
-			RESFILE_close_new_resource_file(build_list_file);
-
-			rge_free(temp);
+			rge_free(target_path);
+			rge_free(source_path);
 		}
 
 		break;
@@ -189,55 +218,70 @@ int32 main(int32 argc, char **argv)
 	case 'b':
 	case 'm':
 	{
+		unixify_path(argv[2]);
 		char *build_list_file = argv[2];
-		
-		char *source_path = EMPTYSTR;
-		char *target_path = EMPTYSTR;
 
-		if (argc > 3)
+		char *p = strrchr(build_list_file, '.');
+
+		if (!p || !strequal(p, ".rm"))
 		{
-			source_path = (char *)rge_calloc(strlen(argv[3]) + 1 + 1, 1);
+			printf("error: wrong extension for infile, must be .rm\n");
+
+			return 1;
+		}
+		
+		char *source_path;
+		char *target_path;
+
+		if (!argv[3])
+		{
+			source_path = strdup("");
+			target_path = strdup("");
+		}
+		else
+		{
+			unixify_path(argv[3]);
+			size_t source_path_len = strlen(argv[3]);
+			source_path = rge_calloc<char>(source_path_len + 1 + 1);
 			strcpy(source_path, argv[3]);
 
-			if (*source_path != '.' || (*source_path == '.' && source_path[1] == '..'))
-			{
-				size_t len = strlen(source_path);
+			if (source_path[source_path_len - 1] != '/') source_path[source_path_len] = '/';
 
-				if (source_path[len - 1] != '/' && source_path[len - 1] != '\\')
-				{
-					source_path[len] = '/';
-				}
+			if (!argv[4])
+			{
+				target_path = strdup("");
 			}
 			else
 			{
-				*source_path = '\0';
+				unixify_path(argv[4]);
+				size_t target_path_len = strlen(argv[4]);
+				target_path = rge_calloc<char>(target_path_len + 1 + 1);
+				strcpy(target_path, argv[4]);
+
+				if (target_path[target_path_len - 1] != '/') target_path[target_path_len] = '/';
 			}
 		}
 
-		if (argc > 4)
+		if (*target_path && mkdir_p(target_path) == -1)
 		{
-			target_path = (char *)rge_calloc(strlen(argv[4]) + 1 + 1, 1);
+			printf("error: couldn't create target path: %s\n", target_path);
 
-			strcpy(target_path, argv[4]);
-
-			if (*target_path != '.' || (*target_path == '.' && target_path[1] == '..'))
-			{
-				size_t len = strlen(target_path);
-
-				if (target_path[len - 1] != '/' && target_path[len - 1] != '\\')
-				{
-					target_path[len] = '/';
-				}
-			}
-			else
-			{
-				*target_path = '\0';
-			}
+			return 1;
 		}
 
-		RESFILE_build_res_file(build_list_file, source_path, target_path);
+		if (RESFILE_build_res_file(build_list_file, source_path, target_path))
+		{
+			printf("RESFILE_build_res_file done\n");
+		}
+		else
+		{
+			printf("error: RESFILE_build_res_file failed\n");
 
-		break;
+			return 1;
+		}
+
+		rge_free(target_path);
+		rge_free(source_path);
 	}
 	}
 

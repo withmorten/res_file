@@ -120,19 +120,16 @@ bool32 RESFILE_build_res_file(char *build_list_file, char *source_path, char *ta
 	// and the resource filename in the .rm file included the extension
 	// for easier handling of making them that's implemented differently here
 
-	char rPassword[40] = ZEROSTR;
+	char rPassword[40];
 	char data_filename[MAX_PATH];
 	char resource_basename[MAX_PATH];
 	char temp_filename[MAX_PATH];
 	char resource_filename[MAX_PATH];
-	char build_filename[MAX_PATH];
 	uint32 rId, rType;
 	BuildRes_type_node *ID_List;
 	int32 numResTypes;
 
-	snprintf(build_filename, sizeof(build_filename), "%s%s", source_path, build_list_file);
-
-	FILE *buildFile = rge_fopen(build_filename, "r");
+	FILE *buildFile = rge_fopen(build_list_file, "r");
 
 	if (!buildFile)
 	{
@@ -143,14 +140,25 @@ bool32 RESFILE_build_res_file(char *build_list_file, char *source_path, char *ta
 
 	fscanf(buildFile, "%s %s", resource_basename, rPassword);
 
-	snprintf(resource_filename, sizeof(resource_filename), "%s%s.drs", target_path, resource_basename);
+#ifdef DRS_NAME_FROM_RM
+	saprintf(resource_filename, "%s%s.drs", target_path, resource_basename);
+#else
+	char *p = strchr(build_list_file, '/');
+
+	if (p) p++;
+	else p = build_list_file;
+
+	stracpychr(resource_basename, p, '.');
+
+	saprintf(resource_filename, "%s%s.drs", target_path, resource_basename);
+#endif
 
 	ID_List = NULL;
 	numResTypes = 0;
 
 	while (fscanf(buildFile, "%s", temp_filename) != EOF && fscanf(buildFile, "%d", &rId) != EOF)
 	{
-		snprintf(data_filename, sizeof(data_filename), "%s%s\\%s", source_path, resource_basename, temp_filename);
+		saprintf(data_filename, "%s%s\\%s", source_path, resource_basename, temp_filename);
 
 		rType = BUILDRES_get_files_resource_type(temp_filename);
 
@@ -238,7 +246,7 @@ bool32 RESFILE_build_res_file(char *build_list_file, char *source_path, char *ta
 		ID_Node->resSize = 0;
 		ID_Node->next = NULL;
 
-		strncpy_s(ID_Node->fName, data_filename, sizeof(data_filename));
+		stracpy(ID_Node->fName, data_filename);
 
 		rge_handle dataHandle = _open(data_filename, DEFAULT_READ_FLAGS);
 
@@ -297,11 +305,12 @@ bool32 RESFILE_build_res_file(char *build_list_file, char *source_path, char *ta
 		return FALSE;
 	}
 
-	resfile_header theHeader = ZEROMEM;
+	resfile_header theHeader;
+	memzero(&theHeader, sizeof(theHeader));
 
-	strncpy_s(theHeader.banner_msg, header_message, sizeof(header_message));
+	stracpy(theHeader.banner_msg, header_message);
 	memcpy(theHeader.version, RESFILE_VERSION, sizeof(theHeader.version));
-	strncpy_s(theHeader.password, rPassword, sizeof(rPassword));
+	stracpy(theHeader.password, rPassword);
 
 	int32 offset = sizeof(resfile_header) + numResTypes * sizeof(resfile_type_dir_node);
 
@@ -438,7 +447,7 @@ void RESFILE_open_new_resource_file(char *resFileName, char *password, char *pat
 
 	char resFile[MAX_PATH];
 
-	snprintf(resFile, sizeof(resFile), "%s%s", path, resFileName);
+	saprintf(resFile, "%s%s", path, resFileName);
 
 	if (open_mode == RESOURCE_MEMORY_MAPPED)
 	{
@@ -484,9 +493,9 @@ void RESFILE_open_new_resource_file(char *resFileName, char *password, char *pat
 		}
 	}
 
-	ResFileHdr *New_Res_File = (ResFileHdr *)malloc(sizeof(ResFileHdr));
+	ResFileHdr *New_Res_File = rge_malloc<ResFileHdr>();
 
-	strncpy_s(New_Res_File->res_name, resFileName, sizeof(New_Res_File->res_name));
+	stracpy(New_Res_File->res_name, resFileName);
 
 	New_Res_File->next = NULL;
 
@@ -516,7 +525,6 @@ void RESFILE_open_new_resource_file(char *resFileName, char *password, char *pat
 
 		if (_read(fHandle, New_Res_File->header, rHeader.directory_size) != rHeader.directory_size)
 		{
-
 			printf("Error: Reading resfile header data.\n");
 
 			return;
@@ -653,34 +661,34 @@ bool32 RESFILE_locate_resource(uint32 rType, uint32 rId, rge_handle &file, int32
 	{
 		resfile_header *header = p->header;
 		resfile_type_dir_node *type_nodes = (resfile_type_dir_node *)&header[1];
-byte *resfile = (byte *)header;
+		byte *resfile = (byte *)header;
 
-for (int32 x = 0; x < header->num_res_types; x++)
-{
-	resfile_type_dir_node *type_node = &type_nodes[x];
-
-	if (type_node->type == rType)
-	{
-		resfile_id_dir_node *id_nodes = (resfile_id_dir_node *)&resfile[type_node->dirOffset];
-
-		for (int32 y = 0; y < type_node->numID; y++)
+		for (int32 x = 0; x < header->num_res_types; x++)
 		{
-			resfile_id_dir_node *id_node = &id_nodes[y];
+			resfile_type_dir_node *type_node = &type_nodes[x];
 
-			if (id_node->id == rId)
+			if (type_node->type == rType)
 			{
-				file = p->handle;
-				offset = id_node->itemOffset;
-				mapped_file = p->mapped_file;
-				size = id_node->itemSize;
+				resfile_id_dir_node *id_nodes = (resfile_id_dir_node *)&resfile[type_node->dirOffset];
 
-				return TRUE;
+				for (int32 y = 0; y < type_node->numID; y++)
+				{
+					resfile_id_dir_node *id_node = &id_nodes[y];
+
+					if (id_node->id == rId)
+					{
+						file = p->handle;
+						offset = id_node->itemOffset;
+						mapped_file = p->mapped_file;
+						size = id_node->itemSize;
+
+						return TRUE;
+					}
+				}
 			}
 		}
-	}
-}
 
-p = p->next;
+		p = p->next;
 	}
 
 	return FALSE;
@@ -696,7 +704,7 @@ bool32 RESFILE_Extract_to_File(uint32 rType, uint32 rId, char *file_name, FILE *
 
 	if (data)
 	{
-		char temp_path[MAX_PATH] = ZEROSTR;
+		char temp_path[MAX_PATH];
 
 		if (!GetTempPath(sizeof(temp_path), temp_path))
 		{
@@ -791,7 +799,7 @@ void RESFILE_dump_all(char *res_file, char *target_path)
 				resfile_id_dir_node *id_node = &id_nodes[y];
 				char filename[MAX_PATH];
 
-				snprintf(filename, sizeof(filename), "%s%05d.%s", target_path, id_node->id, RESFILE_get_extension(type_node->type));
+				saprintf(filename, "%s%05d.%s", target_path, id_node->id, RESFILE_get_extension(type_node->type));
 
 				RESFILE_Make_File(type_node->type, id_node->id, filename);
 			}
