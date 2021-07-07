@@ -558,7 +558,7 @@ void RESFILE_open_new_resource_file(char *resFileName, char *password, char *pat
 		Res_File->next = New_Res_File;
 	}
 
-	if (strcmp(New_Res_File->header->password, password))
+	if (!strequal(New_Res_File->header->password, password))
 	{
 		printf("Error: Open_ResFile, Corruption detected in resfile.\n");
 	}
@@ -578,7 +578,7 @@ void RESFILE_close_new_resource_file(char *res_file)
 
 	if (Res_Files)
 	{
-		while (strcmp(res_file, Res_File->res_name))
+		while (!strequal(res_file, Res_File->res_name))
 		{
 			Save_Res_File = Res_File;
 			Res_File = Res_File->next;
@@ -791,7 +791,7 @@ void RESFILE_dump_all(char *res_file, char *target_path)
 
 	if (Res_Files)
 	{
-		while (strcmp(res_file, Res_File->res_name))
+		while (!strequal(res_file, Res_File->res_name))
 		{
 			Res_File = Res_File->next;
 
