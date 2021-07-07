@@ -124,7 +124,7 @@ int32 main(int32 argc, char **argv)
 #ifdef DRS_NAME_FROM_RM
 			saprintf(drs_name, "%s.drs", res_name);
 #else
-			p = strchr(build_list_file, '/');
+			p = strrchr(build_list_file, '/');
 
 			if (p) p++;
 			else p = build_list_file;

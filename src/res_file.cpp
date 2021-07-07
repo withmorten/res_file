@@ -143,7 +143,7 @@ bool32 RESFILE_build_res_file(char *build_list_file, char *source_path, char *ta
 #ifdef DRS_NAME_FROM_RM
 	saprintf(resource_filename, "%s%s.drs", target_path, resource_basename);
 #else
-	char *p = strchr(build_list_file, '/');
+	char *p = strrchr(build_list_file, '/');
 
 	if (p) p++;
 	else p = build_list_file;
@@ -159,6 +159,7 @@ bool32 RESFILE_build_res_file(char *build_list_file, char *source_path, char *ta
 	while (fscanf(buildFile, "%s", temp_filename) != EOF && fscanf(buildFile, "%d", &rId) != EOF)
 	{
 		saprintf(data_filename, "%s%s\\%s", source_path, resource_basename, temp_filename);
+		unixify_path(data_filename);
 
 		rType = BUILDRES_get_files_resource_type(temp_filename);
 
