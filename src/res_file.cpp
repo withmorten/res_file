@@ -293,6 +293,19 @@ bool32 RESFILE_build_res_file(char *build_list_file, char *source_path, char *ta
 		}
 
 		_close(dataHandle);
+
+#ifdef VOOBLY_SLP_DECODE
+		if (rType == RESFILE_TYPE_SLP && *(uint32 *)ID_Node->resData == 0xBEEF1337)
+		{
+			ID_Node->resSize -= sizeof(uint32);
+			memmove(ID_Node->resData, ID_Node->resData + sizeof(uint32), ID_Node->resSize);
+
+			for (int32 i = 0; i < ID_Node->resSize; i++)
+			{
+				ID_Node->resData[i] = 0x20 * ((ID_Node->resData[i] - 17) ^ 0x23) | ((byte)((ID_Node->resData[i] - 17) ^ 0x23) >> 3);
+			}
+		}
+#endif
 	}
 
 	rge_fclose(buildFile);

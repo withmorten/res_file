@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 
 // #define DRS_NAME_FROM_RM
+#define VOOBLY_SLP_DECODE
 
 typedef int8_t int8;
 typedef uint8_t uint8;
