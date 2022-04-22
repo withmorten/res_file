@@ -2,6 +2,8 @@
 
 Small commandline tool that can extract and pack Age of Empires resource files (.drs), using resource manifests (.rm) similar to how it originally worked.
 
+Some manifests are here: [aoeres](https://github.com/withmorten/aoeres)
+
 ## usage
 
 extracting:
